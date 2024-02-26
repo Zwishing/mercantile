@@ -1,0 +1,12 @@
+[package]
+name = "mercantile"
+version = "0.1.0"
+edition = "2021"
+authors = ["zwishing"]
+description = "This crate is deeply inspired by mercantile developed by mapbox in Python"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+
+[dependencies]
+geojson = "0.24.1"
+thiserror = "1.0.57"
