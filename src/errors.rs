@@ -6,7 +6,7 @@ use crate::errors;
 ///////////////////////////////////////////////////////////////////////////////////////////
 #[derive(Error,Debug)]
 pub enum MercantileError{
-    #[error("quadkey number is not more than 3")]
+    #[error("quadkey number is not bigger than 3")]
     QuadKeyError,
     #[error(transparent)]
     InvalidZoomError(#[from] errors::InvalidZoomError),
@@ -23,7 +23,7 @@ pub enum MercantileError{
 #[derive(Error,Debug)]
 pub enum InvalidZoomError{
     #[error("The input zoom {0} is smaller than Tile zoom")]
-    ZoomIsTooSmall(u32),
+    ZoomIsTooSmall(u8),
     #[error("The input zoom {0} is bigger than Tile zoom")]
-    ZoomIsTooLarge(u32)
+    ZoomIsTooLarge(u8)
 }

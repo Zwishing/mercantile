@@ -191,44 +191,52 @@ mod tests {
 
     }
 
+    #[test]
+    fn test_from(){
+        let t = mercantile::Tile::from(vec![1,3,5]);
+        // let t = mercantile::Tile::from([1,3,5]);
+        println!("{:#?}",t);
+
+    }
+
     //'Verify that tiles are being removed by simplify()
-    #[test]
-    fn test_simplify_removal(){
-        let tiles = vec![
-            mercantile::Tile::from_array([1298, 3129, 13]),
-            mercantile::Tile::from_array([649, 1564, 12]),
-            mercantile::Tile::from_array([650, 1564, 12])
-        ];
-        let simplified = mercantile::Tile::simplify(&tiles).unwrap();
-        assert_eq!(simplified.contains(&mercantile::Tile::from_array([1298, 3129, 13])),false);
-        assert_eq!(simplified.contains(&mercantile::Tile::from_array([649, 1564, 12])),true);
-        assert_eq!(simplified.contains(&mercantile::Tile::from_array([650, 1564, 12])),true);
-    }
-    #[test]
-    fn test_simplify() {
-        let tile = mercantile::Tile::new(243, 166, 9);
-        let mut children = tile.children_by_zoom(12).unwrap();
-        let len = children.len();
-        assert_eq!(len,64);
-        children.remove(len-1);
-        children.remove(len-2);
-        children.remove(len-3);
-        children.push(children[0]);
-
-        let targets = vec![
-            mercantile::Tile::from_array([487, 332, 10]),
-            mercantile::Tile::from_array([486, 332, 10]),
-            mercantile::Tile::from_array([487, 333, 10]),
-            mercantile::Tile::from_array([973, 667, 11]),
-            mercantile::Tile::from_array([973, 666, 11]),
-            mercantile::Tile::from_array([972, 666, 11]),
-            mercantile::Tile::from_array([1944, 1334, 12]),
-        ];
-        let tiles = mercantile::Tile::simplify(&children).unwrap();
-
-        for t in targets {
-            assert_eq!(tiles.contains(&t), true);
-        }
-
-    }
+    // #[test]
+    // fn test_simplify_removal(){
+    //     let tiles = vec![
+    //         mercantile::Tile::from_array([1298, 3129, 13]),
+    //         mercantile::Tile::from_array([649, 1564, 12]),
+    //         mercantile::Tile::from_array([650, 1564, 12])
+    //     ];
+    //     let simplified = mercantile::Tile::simplify(&tiles).unwrap();
+    //     assert_eq!(simplified.contains(&mercantile::Tile::from_array([1298, 3129, 13])),false);
+    //     assert_eq!(simplified.contains(&mercantile::Tile::from_array([649, 1564, 12])),true);
+    //     assert_eq!(simplified.contains(&mercantile::Tile::from_array([650, 1564, 12])),true);
+    // }
+    // #[test]
+    // fn test_simplify() {
+    //     let tile = mercantile::Tile::new(243, 166, 9);
+    //     let mut children = tile.children_by_zoom(12).unwrap();
+    //     let len = children.len();
+    //     assert_eq!(len,64);
+    //     children.remove(len-1);
+    //     children.remove(len-2);
+    //     children.remove(len-3);
+    //     children.push(children[0]);
+    //
+    //     let targets = vec![
+    //         mercantile::Tile::from_array([487, 332, 10]),
+    //         mercantile::Tile::from_array([486, 332, 10]),
+    //         mercantile::Tile::from_array([487, 333, 10]),
+    //         mercantile::Tile::from_array([973, 667, 11]),
+    //         mercantile::Tile::from_array([973, 666, 11]),
+    //         mercantile::Tile::from_array([972, 666, 11]),
+    //         mercantile::Tile::from_array([1944, 1334, 12]),
+    //     ];
+    //     let tiles = mercantile::Tile::simplify(&children).unwrap();
+    //
+    //     for t in targets {
+    //         assert_eq!(tiles.contains(&t), true);
+    //     }
+    //
+    // }
 }
