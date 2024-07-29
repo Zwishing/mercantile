@@ -2,7 +2,6 @@ use super::errors::{InvalidZoomError, MercantileError};
 use geojson::{Feature, GeoJson, Geometry, Value};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::{E, PI};
-use std::f64::{INFINITY, NEG_INFINITY};
 
 // 地球赤道半径
 const EQUATORIAL_RADIUS: f64 = 6378137.0;
@@ -12,6 +11,10 @@ const EQUATORIAL_CIRCUMFERENCE: f64 = 2.0 * PI * EQUATORIAL_RADIUS;
 const EPSILON: f64 = 1e-14;
 
 const LL_EPSILON: f64 = 1e-11;
+
+const NEG_INFINITY: f64 = f64::NEG_INFINITY;
+
+const INFINITY: f64 = f64::INFINITY;
 
 ///
 /// tile x y z
@@ -69,24 +72,26 @@ impl Tile {
     /// `neighbors` 返回瓦片相连的瓦片，同一层级的瓦片
     ///
     pub fn neighbors(&self) -> Vec<Self> {
-        let mut tiles: Vec<Tile> = vec![];
         let tmp: [i32; 3] = [-1, 0, 1];
         let (x, y, z) = (self.x as i32, self.y as i32, self.z);
 
-        for i in tmp {
-            for j in tmp {
-                if i == 0 && j == 0 {
-                    continue;
-                } else if x + i < 0 || y + j < 0 {
-                    continue;
-                } else if x + i > 1 << z - 1 || y + j > 1 << z - 1 {
-                    continue;
-                }
-                tiles.push(Tile::new((x + i) as u32, (y + j) as u32, z));
-            }
-        }
-        tiles.into_iter().filter(|t| Self::valid(t)).collect()
+        tmp.iter()
+            .flat_map(|&i| {
+                tmp.iter().map(move |&j| (i, j))
+            })
+            .filter(|&(i, j)| {
+                !(i == 0 && j == 0)
+                    && x + i >= 0
+                    && y + j >= 0
+                    && x + i < (1 << z)
+                    && y + j < (1 << z)
+            })
+            .map(move |(i, j)| Tile::new((x + i) as u32, (y + j) as u32, z))
+            .filter(Self::valid)
+            .collect()
     }
+
+
 
     ///
     /// `xy_bounds` Get the web mercator bounding box of a tile
@@ -106,81 +111,77 @@ impl Tile {
     pub fn tile(lng: f64, lat: f64, zoom: Zoom, truncate: bool) -> Self {
         let (x, y) = _xy(lng, lat, truncate);
         let z2 = 1 << zoom;
-        let xtile: u32;
-        let ytile: u32;
 
-        if x <= 0.0 {
-            xtile = 0;
-        } else if x >= 1.0 {
-            xtile = z2 - 1;
-        } else {
-            xtile = ((x + EPSILON) * (z2 as f64)).floor() as u32;
-        }
+        let xtile = match x {
+            x if x <= 0.0 => 0,
+            x if x >= 1.0 => z2 - 1,
+            _ => ((x + EPSILON) * (z2 as f64)).floor() as u32,
+        };
 
-        if y <= 0.0 {
-            ytile = 0;
-        } else if y >= 1.0 {
-            ytile = z2 - 1;
-        } else {
-            ytile = ((y + EPSILON) * (z2 as f64)).floor() as u32;
-        }
+        let ytile = match y {
+            y if y <= 0.0 => 0,
+            y if y >= 1.0 => z2 - 1,
+            _ => ((y + EPSILON) * (z2 as f64)).floor() as u32,
+        };
+
         Self::new(xtile, ytile, zoom)
     }
+
     ///
     /// `quadkey`
     ///
     pub fn quadkey(&self) -> String {
-        let mut qk = String::from("");
-        for z in (1..self.z + 1).rev() {
-            let mut digit = 0;
+        let mut qk = String::with_capacity(self.z as usize);
+        (1..=self.z).rev().for_each(|z| {
             let mask = 1 << (z - 1);
-
-            if self.x & mask != 0 {
-                digit += 1;
-            }
-            if self.y & mask != 0 {
-                digit += 2;
-            }
-            qk.push_str(&digit.to_string());
-        }
+            let digit = match (self.x & mask != 0, self.y & mask != 0) {
+                (false, false) => '0',
+                (true, false) => '1',
+                (false, true) => '2',
+                (true, true) => '3',
+            };
+            qk.push(digit);
+        });
         qk
     }
 
     pub fn quadkey_to_tile(qk: &str) -> Result<Self, MercantileError> {
-        if qk.len() == 0 {
+        if qk.is_empty() {
             return Ok(Self::new(0, 0, 0));
         }
-        let mut xtile = 0;
-        let mut ytile = 0;
-        let mut zoom = 0;
-        for (i, digit) in qk.chars().rev().enumerate() {
-            let mask = 1 << i;
-            match digit {
-                '0' => {}
-                '1' => xtile = xtile | mask,
-                '2' => ytile = ytile | mask,
-                '3' => {
-                    xtile = xtile | mask;
-                    ytile = ytile | mask;
+
+        let (xtile, ytile, _) = 
+            qk.chars()
+            .rev()
+            .enumerate()
+            .try_fold((0, 0, 0), |(xtile, ytile, zoom), (i, digit)| {
+                let mask = 1 << i;
+                match digit {
+                    '0' => Ok((xtile, ytile, zoom)),
+                    '1' => Ok((xtile | mask, ytile, zoom)),
+                    '2' => Ok((xtile, ytile | mask, zoom)),
+                    '3' => Ok((xtile | mask, ytile | mask, zoom)),
+                    _ => Err(MercantileError::QuadKeyError),
                 }
-                _ => return Err(MercantileError::QuadKeyError),
-            }
-            zoom = (i + 1) as Zoom;
-        }
+        })?;
+
+        let zoom = qk.len() as Zoom;
+
         Ok(Self::new(xtile, ytile, zoom))
     }
+
 
     ///
     /// `tiles` 按照四至及层级生成Tile
     ///
-    pub fn tiles(
+    pub fn tiles<'a>(
         mut west: f64,
         mut south: f64,
         mut east: f64,
         mut north: f64,
-        zooms: Vec<Zoom>,
+        zooms: &'a Vec<Zoom>,
         truncate: bool,
-    ) -> impl Iterator<Item = Self> {
+    ) -> impl Iterator<Item = Self> + 'a {
         if truncate {
             (west, south) = truncate_lnglat(west, south);
             (east, north) = truncate_lnglat(east, north);
@@ -202,16 +203,17 @@ impl Tile {
                 e = e.min(180.0);
                 n = n.min(85.051129);
 
-                zooms.clone().into_iter().flat_map(move |z| {
+                zooms.iter().flat_map(move |&z| {
                     let ul_tile = Self::tile(w, n, z, false);
                     let lr_tile = Self::tile(e - LL_EPSILON, s + LL_EPSILON, z, false);
 
-                    (ul_tile.x..lr_tile.x + 1).flat_map(move |i| {
-                        (ul_tile.y..lr_tile.y + 1).map(move |j| Self::new(i, j, z))
+                    (ul_tile.x..=lr_tile.x).flat_map(move |i| {
+                        (ul_tile.y..=lr_tile.y).map(move |j| Self::new(i, j, z))
                     })
                 })
             })
     }
+
 
     ///
     /// `parent` 获取当前瓦片的父瓦片
@@ -235,12 +237,12 @@ impl Tile {
                 InvalidZoomError::ZoomIsTooLarge(zoom),
             ));
         }
-        let mut t = Self::new(self.x, self.y, self.z);
-        for _ in (zoom..self.z).rev() {
-            t = t.parent()?;
-        }
-        Ok(t)
+
+        (zoom..self.z)
+            .rev()
+            .try_fold(Self::new(self.x, self.y, self.z), |t, _| t.parent())
     }
+
 
     ///
     /// `children` 获取四个子瓦片
@@ -264,46 +266,83 @@ impl Tile {
                 InvalidZoomError::ZoomIsTooSmall(zoom),
             ));
         }
-        let mut tiles = vec![];
 
-        tiles.push(Tile::new(self.x, self.y, self.z));
+        let mut tiles = vec![Self::new(self.x, self.y, self.z)];
 
-        while tiles[0].z < zoom {
-            let t = tiles.remove(0);
-            tiles.push(Self::new(t.x * 2, t.y * 2, t.z + 1));
-            tiles.push(Self::new(t.x * 2 + 1, t.y * 2, t.z + 1));
-            tiles.push(Self::new(t.x * 2 + 1, t.y * 2 + 1, t.z + 1));
-            tiles.push(Self::new(t.x * 2, t.y * 2 + 1, t.z + 1));
+        while tiles.first().map_or(false, |t| t.z < zoom) {
+            let mut new_tiles = Vec::with_capacity(tiles.len() * 4);
+            for t in tiles.drain(..) {
+                new_tiles.extend_from_slice(&[
+                    Self::new(t.x * 2, t.y * 2, t.z + 1),
+                    Self::new(t.x * 2 + 1, t.y * 2, t.z + 1),
+                    Self::new(t.x * 2 + 1, t.y * 2 + 1, t.z + 1),
+                    Self::new(t.x * 2, t.y * 2 + 1, t.z + 1),
+                ]);
+            }
+            tiles = new_tiles;
         }
+
         Ok(tiles)
     }
+
 
     ///
     /// `simplify` Reduces the size of the tileset as much as possible by merging leaves into parents.
     ///
-    pub fn simplify(tiles: &Vec<Self>) -> Result<HashSet<Self>, MercantileError> {
+    // pub fn simplify(tiles: &mut Vec<Self>) -> Result<HashSet<Self>, MercantileError> {
+    //     let mut root_set = HashSet::new();
+    //     for t in Self::sorted_tiles(tiles) {
+    //         let mut is_new_tile = true;
+    //         let vec: Vec<Zoom> = (0..t.z).collect();
+    //         let parent_tiles: Vec<Result<Self, MercantileError>> =
+    //             vec.iter().map(|&x| t.parent_by_zoom(x)).collect();
+    //         for super_tile in parent_tiles {
+    //             if root_set.contains(&super_tile?) {
+    //                 is_new_tile = false;
+    //                 continue;
+    //             }
+    //         }
+    //         if is_new_tile {
+    //             root_set.insert(t.clone());
+    //         }
+    //     }
+    //     let mut is_merging = true;
+    //     while is_merging {
+    //         (root_set, is_merging) = Self::merge(root_set)?
+    //     }
+    //     Ok(root_set)
+    // }
+
+    pub fn simplify(tiles: &mut Vec<Self>) -> Result<HashSet<Self>, MercantileError> {
         let mut root_set = HashSet::new();
-        for t in Self::sorted_tiles(tiles) {
-            let mut is_new_tile = true;
-            let vec: Vec<Zoom> = (0..t.z).collect();
-            let parent_tiles: Vec<Result<Self, MercantileError>> =
-                vec.iter().map(|&x| t.parent_by_zoom(x)).collect();
-            for super_tile in parent_tiles {
-                if root_set.contains(&super_tile?) {
-                    is_new_tile = false;
-                    continue;
-                }
-            }
-            if is_new_tile {
-                root_set.insert(t);
+
+        // 获取排序后的瓦片
+        let sorted_tiles = Self::sorted_tiles(tiles);
+
+        // 处理每个瓦片，决定是否加入到 root_set 中
+        for t in sorted_tiles {
+            let parent_tiles: Result<Vec<_>, _> = (0..t.z)
+                .map(|z| t.parent_by_zoom(z))
+                .collect();
+
+            let parent_tiles = parent_tiles?;
+
+            if parent_tiles.iter().all(|parent| !root_set.contains(parent)) {
+                root_set.insert(t.clone());
             }
         }
+
+        // 合并瓦片直到没有更多合并
         let mut is_merging = true;
         while is_merging {
-            (root_set, is_merging) = Self::merge(root_set)?
+            let (merged_set, merging) = Self::merge(root_set)?;
+            root_set = merged_set;
+            is_merging = merging;
         }
+
         Ok(root_set)
     }
+
 
     ///
     /// `merge` Checks to see if there are 4 tiles in merge_set which can be merged.
@@ -311,32 +350,61 @@ impl Tile {
     //         This returns a list of tiles, as well as a boolean indicating if any were merged.
     //         By repeatedly applying merge, a tileset can be simplified.
     ///
+    // pub fn merge(merge_set: HashSet<Self>) -> Result<(HashSet<Self>, bool), MercantileError> {
+    //     let mut upwards_merge: HashMap<Self, HashSet<Tile>> = HashMap::new();
+    //     for tile in merge_set {
+    //         let mut tmp = HashSet::new();
+    //         let tile_parent = tile.parent()?;
+    //         if !upwards_merge.contains_key(&tile_parent) {
+    //             upwards_merge.insert(tile_parent, HashSet::new());
+    //         }
+    //         tmp.insert(tile);
+    //         let merged = upwards_merge[&tile_parent].union(&tmp).copied().collect();
+    //         upwards_merge.insert(tile_parent, merged);
+    //     }
+    //     let mut current_tileset = HashSet::new();
+    //     let mut changed = false;
+    //     for (supertile, children) in upwards_merge {
+    //         if children.len() == 4 {
+    //             current_tileset.insert(supertile);
+    //             changed = true;
+    //         } else {
+    //             for c in children {
+    //                 current_tileset.insert(c);
+    //             }
+    //         }
+    //     }
+    //     Ok((current_tileset, changed))
+    // }
     pub fn merge(merge_set: HashSet<Self>) -> Result<(HashSet<Self>, bool), MercantileError> {
-        let mut upwards_merge: HashMap<Self, HashSet<Tile>> = HashMap::new();
+        let mut upwards_merge: HashMap<Self, HashSet<Self>> = HashMap::new();
+
+        // 将每个瓦片及其父瓦片收集到上下合并映射中
         for tile in merge_set {
-            let mut tmp = HashSet::new();
             let tile_parent = tile.parent()?;
-            if !upwards_merge.contains_key(&tile_parent) {
-                upwards_merge.insert(tile_parent, HashSet::new());
-            }
-            tmp.insert(tile);
-            let merged = upwards_merge[&tile_parent].union(&tmp).copied().collect();
-            upwards_merge.insert(tile_parent, merged);
+            upwards_merge
+                .entry(tile_parent)
+                .or_insert_with(HashSet::new)
+                .insert(tile);
         }
-        let mut current_tileset = HashSet::new();
-        let mut changed = false;
-        for (supertile, children) in upwards_merge {
-            if children.len() == 4 {
-                current_tileset.insert(supertile);
-                changed = true;
-            } else {
-                for c in children {
-                    current_tileset.insert(c);
+
+        // 根据父瓦片的子瓦片数量构建新的瓦片集合
+        let (current_tileset, changed) = upwards_merge.into_iter().fold(
+            (HashSet::new(), false),
+            |(mut current_tileset, mut changed), (supertile, children)| {
+                if children.len() == 4 {
+                    current_tileset.insert(supertile);
+                    changed = true;
+                } else {
+                    current_tileset.extend(children);
                 }
-            }
-        }
+                (current_tileset, changed)
+            },
+        );
+
         Ok((current_tileset, changed))
     }
+
 
     ///
     /// `bounding_tile` Get the smallest tile to cover a LngLatBbox 经纬度范围
@@ -443,32 +511,25 @@ impl Tile {
     ///
     /// `sorted_tiles` 对tiles进行排序,返回一个新的结果
     ///
-    pub fn sorted_tiles(tiles: &Vec<Self>) -> Vec<Self> {
-        let mut tiles = tiles.clone();
-        let len = tiles.len();
-        for i in 0..len {
-            for j in 0..len - i - 1 {
-                if tiles[j].z > tiles[j + 1].z {
-                    // 可以直接使用swap
-                    tiles.swap(j, j + 1);
-                }
-            }
-        }
+    // pub fn sorted_tiles(tiles: &Vec<Self>) -> Vec<Self> {
+    //     let mut tiles = tiles.clone();
+    //     let len = tiles.len();
+    //     for i in 0..len {
+    //         for j in 0..len - i - 1 {
+    //             if tiles[j].z > tiles[j + 1].z {
+    //                 // 可以直接使用swap
+    //                 tiles.swap(j, j + 1);
+    //             }
+    //         }
+    //     }
+    //     tiles
+    // }
+    pub fn sorted_tiles(tiles: &mut Vec<Self>) -> &Vec<Self> {
+        // let mut tiles = tiles.clone();
+        tiles.sort_by(|a, b| a.z.cmp(&b.z));
         tiles
     }
-}
 
-// impl From<[T;3]>> for Tile {
-//     fn from(value: Box<dyn Tileable>) -> Self {
-//         Self::_from(value.tile())
-//     }
-// }
-
-impl From<Vec<u32>> for Tile {
-    fn from(value: Vec<u32>) -> Self {
-        assert_eq!(value.len(), 3, "Invalid vector length");
-        Self::new(value[0], value[1], value[2] as u8)
-    }
 }
 
 impl From<&Vec<u32>> for Tile {
@@ -477,6 +538,13 @@ impl From<&Vec<u32>> for Tile {
         Self::new(value[0], value[1], value[2] as u8)
     }
 }
+
+impl From<&[u32;3]> for Tile {
+    fn from(value:&[u32;3])->Self{
+         Self::new(value[0], value[1], value[2] as u8)
+    }
+}
+
 impl Clone for Tile {
     fn clone(&self) -> Self {
         Tile::new(self.x, self.y, self.z)
@@ -508,6 +576,19 @@ impl LngLat {
     }
     pub fn to_array(&self) -> [f64; 2] {
         [self.lng, self.lat]
+    }
+}
+
+impl From<&Vec<f64>> for LngLat{
+    fn from(value: &Vec<f64>) -> Self {
+        assert_eq!(value.len(), 2, "Invalid vector length {}",value.len());
+        Self::new(value[0],value[1])
+    }
+}
+
+impl From<&[f64;2]> for LngLat {
+    fn from(value: &[f64; 2]) -> Self {
+        Self::new(value[0],value[1])
     }
 }
 

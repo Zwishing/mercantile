@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn test_tiles(){
         let zoom = vec![14];
-        let tiles = mercantile::Tile::tiles(-105.0,39.99,-104.99,40.0,zoom,false);
+        let tiles = mercantile::Tile::tiles(-105.0,39.99,-104.99,40.0,&zoom,false);
         let expected = vec![
             mercantile::Tile::new(3413,6202,14),
             mercantile::Tile::new(3413,6203,14),
@@ -143,16 +143,16 @@ mod tests {
 
     #[test]
     fn sorted_tiles(){
-        let tiles = vec![
+        let mut tiles = vec![
             mercantile::Tile::new(0,1,1),
             mercantile::Tile::new(0,2,5),
             mercantile::Tile::new(1,1,1)];
-        let t = mercantile::Tile::sorted_tiles(&tiles);
+        let t = mercantile::Tile::sorted_tiles(&mut tiles);
         let expected = vec![
             mercantile::Tile::new(0,1,1),
             mercantile::Tile::new(1,1,1),
             mercantile::Tile::new(0,2,5)];
-        assert_eq!(t,expected);
+        assert_eq!(*t,expected);
     }
     #[test]
     fn test_bounding_tile(){
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_from(){
-        let t = mercantile::Tile::from(vec![1,3,5]);
+        let t = mercantile::Tile::from(&vec![1,3,5]);
         // let t = mercantile::Tile::from([1,3,5]);
         println!("{:#?}",t);
 
