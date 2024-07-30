@@ -21,9 +21,9 @@ const INFINITY: f64 = f64::INFINITY;
 ///
 #[derive(Debug, Default, PartialEq, Eq, Hash, Copy)]
 pub struct Tile {
-    x: u32,
-    y: u32,
-    z: Zoom,
+    pub x: u32,
+    pub y: u32,
+    pub z: Zoom,
 }
 
 type Zoom = u8;
@@ -34,16 +34,6 @@ impl Tile {
     ///
     pub fn new(x: u32, y: u32, z: Zoom) -> Self {
         Self { x, y, z }
-    }
-
-    pub fn x(&self) -> u32 {
-        self.x
-    }
-    pub fn y(&self) -> u32 {
-        self.y
-    }
-    pub fn z(&self) -> Zoom {
-        self.z
     }
 
     ///
@@ -289,30 +279,6 @@ impl Tile {
     ///
     /// `simplify` Reduces the size of the tileset as much as possible by merging leaves into parents.
     ///
-    // pub fn simplify(tiles: &mut Vec<Self>) -> Result<HashSet<Self>, MercantileError> {
-    //     let mut root_set = HashSet::new();
-    //     for t in Self::sorted_tiles(tiles) {
-    //         let mut is_new_tile = true;
-    //         let vec: Vec<Zoom> = (0..t.z).collect();
-    //         let parent_tiles: Vec<Result<Self, MercantileError>> =
-    //             vec.iter().map(|&x| t.parent_by_zoom(x)).collect();
-    //         for super_tile in parent_tiles {
-    //             if root_set.contains(&super_tile?) {
-    //                 is_new_tile = false;
-    //                 continue;
-    //             }
-    //         }
-    //         if is_new_tile {
-    //             root_set.insert(t.clone());
-    //         }
-    //     }
-    //     let mut is_merging = true;
-    //     while is_merging {
-    //         (root_set, is_merging) = Self::merge(root_set)?
-    //     }
-    //     Ok(root_set)
-    // }
-
     pub fn simplify(tiles: &mut Vec<Self>) -> Result<HashSet<Self>, MercantileError> {
         let mut root_set = HashSet::new();
 
@@ -324,62 +290,26 @@ impl Tile {
             let parent_tiles: Result<Vec<_>, _> = (0..t.z)
                 .map(|z| t.parent_by_zoom(z))
                 .collect();
-
             let parent_tiles = parent_tiles?;
-
             if parent_tiles.iter().all(|parent| !root_set.contains(parent)) {
-                root_set.insert(t.clone());
+                root_set.insert(*t);
             }
         }
-
+        
         // 合并瓦片直到没有更多合并
         let mut is_merging = true;
         while is_merging {
-            let (merged_set, merging) = Self::merge(root_set)?;
+            let (merged_set, merging) = Self::_merge(root_set)?;
             root_set = merged_set;
             is_merging = merging;
         }
-
+        
         Ok(root_set)
     }
-
-
-    ///
-    /// `merge` Checks to see if there are 4 tiles in merge_set which can be merged.
-    //         If there are, this merges them.
-    //         This returns a list of tiles, as well as a boolean indicating if any were merged.
-    //         By repeatedly applying merge, a tileset can be simplified.
-    ///
-    // pub fn merge(merge_set: HashSet<Self>) -> Result<(HashSet<Self>, bool), MercantileError> {
-    //     let mut upwards_merge: HashMap<Self, HashSet<Tile>> = HashMap::new();
-    //     for tile in merge_set {
-    //         let mut tmp = HashSet::new();
-    //         let tile_parent = tile.parent()?;
-    //         if !upwards_merge.contains_key(&tile_parent) {
-    //             upwards_merge.insert(tile_parent, HashSet::new());
-    //         }
-    //         tmp.insert(tile);
-    //         let merged = upwards_merge[&tile_parent].union(&tmp).copied().collect();
-    //         upwards_merge.insert(tile_parent, merged);
-    //     }
-    //     let mut current_tileset = HashSet::new();
-    //     let mut changed = false;
-    //     for (supertile, children) in upwards_merge {
-    //         if children.len() == 4 {
-    //             current_tileset.insert(supertile);
-    //             changed = true;
-    //         } else {
-    //             for c in children {
-    //                 current_tileset.insert(c);
-    //             }
-    //         }
-    //     }
-    //     Ok((current_tileset, changed))
-    // }
-    pub fn merge(merge_set: HashSet<Self>) -> Result<(HashSet<Self>, bool), MercantileError> {
+    
+    fn _merge(merge_set: HashSet<Self>) -> Result<(HashSet<Self>, bool), MercantileError> {
         let mut upwards_merge: HashMap<Self, HashSet<Self>> = HashMap::new();
-
-        // 将每个瓦片及其父瓦片收集到上下合并映射中
+        
         for tile in merge_set {
             let tile_parent = tile.parent()?;
             upwards_merge
@@ -387,8 +317,7 @@ impl Tile {
                 .or_insert_with(HashSet::new)
                 .insert(tile);
         }
-
-        // 根据父瓦片的子瓦片数量构建新的瓦片集合
+        
         let (current_tileset, changed) = upwards_merge.into_iter().fold(
             (HashSet::new(), false),
             |(mut current_tileset, mut changed), (supertile, children)| {
@@ -404,7 +333,6 @@ impl Tile {
 
         Ok((current_tileset, changed))
     }
-
 
     ///
     /// `bounding_tile` Get the smallest tile to cover a LngLatBbox 经纬度范围
@@ -447,7 +375,7 @@ impl Tile {
             vec![vec![bbox.east, bbox.north]],
             vec![vec![bbox.west, bbox.north]],
         ]));
-        let bbox = self.tile2lnglatbbox().to_vec();
+        let bbox = self.tile2lnglatbbox().into();
         let poly = GeoJson::Feature(Feature {
             bbox: Some(bbox),
             geometry: Some(geometry),
@@ -511,19 +439,6 @@ impl Tile {
     ///
     /// `sorted_tiles` 对tiles进行排序,返回一个新的结果
     ///
-    // pub fn sorted_tiles(tiles: &Vec<Self>) -> Vec<Self> {
-    //     let mut tiles = tiles.clone();
-    //     let len = tiles.len();
-    //     for i in 0..len {
-    //         for j in 0..len - i - 1 {
-    //             if tiles[j].z > tiles[j + 1].z {
-    //                 // 可以直接使用swap
-    //                 tiles.swap(j, j + 1);
-    //             }
-    //         }
-    //     }
-    //     tiles
-    // }
     pub fn sorted_tiles(tiles: &mut Vec<Self>) -> &Vec<Self> {
         // let mut tiles = tiles.clone();
         tiles.sort_by(|a, b| a.z.cmp(&b.z));
@@ -532,15 +447,15 @@ impl Tile {
 
 }
 
-impl From<&Vec<u32>> for Tile {
-    fn from(value: &Vec<u32>) -> Self {
-        assert_eq!(value.len(), 3, "Invalid vector length");
+impl From<Vec<u32>> for Tile {
+    fn from(value: Vec<u32>) -> Self {
+        assert_eq!(value.len(), 3, "The vector's length must be 3, but it is {}.",value.len());
         Self::new(value[0], value[1], value[2] as u8)
     }
 }
 
-impl From<&[u32;3]> for Tile {
-    fn from(value:&[u32;3])->Self{
+impl From<[u32;3]> for Tile {
+    fn from(value:[u32;3])->Self{
          Self::new(value[0], value[1], value[2] as u8)
     }
 }
@@ -571,23 +486,17 @@ impl LngLat {
     pub fn lat(&self) -> f64 {
         self.lat
     }
-    pub fn to_vec(&self) -> Vec<f64> {
-        vec![self.lng, self.lat]
-    }
-    pub fn to_array(&self) -> [f64; 2] {
-        [self.lng, self.lat]
-    }
 }
 
-impl From<&Vec<f64>> for LngLat{
-    fn from(value: &Vec<f64>) -> Self {
-        assert_eq!(value.len(), 2, "Invalid vector length {}",value.len());
+impl From<Vec<f64>> for LngLat{
+    fn from(value: Vec<f64>) -> Self {
+        assert_eq!(value.len(), 2, "The vector's length must be 2, but it is {}.",value.len());
         Self::new(value[0],value[1])
     }
 }
 
-impl From<&[f64;2]> for LngLat {
-    fn from(value: &[f64; 2]) -> Self {
+impl From<[f64;2]> for LngLat {
+    fn from(value: [f64; 2]) -> Self {
         Self::new(value[0],value[1])
     }
 }
@@ -620,42 +529,27 @@ impl LngLatBbox {
             north,
         }
     }
+}
 
-    ///
-    /// `to_vec` 将lnglatbbox的转为[west,south,east,north]的vec
-    ///
-    pub fn to_vec(&self) -> Vec<f64> {
-        vec![self.west, self.south, self.east, self.north]
-    }
-
-    ///
-    /// `to_array` 将lnglatbbox的转为[west,south,east,north]的array
-    ///
-    pub fn to_array(&self) -> [f64; 4] {
-        [self.west, self.south, self.east, self.north]
-    }
-
-    ///
-    /// `from_vec` 从[west,south,east,north]的vec生成lnglatbbox
-    ///
-    pub fn from_vec(v: &Vec<f64>) -> Result<LngLatBbox, MercantileError> {
-        let len = v.len() as u32;
-        if len != 4 {
-            return Err(MercantileError::InvalidVecLengthError {
-                real_length: len,
-                valid_length: 4,
-            });
-        }
-        Ok(LngLatBbox::new(v[0], v[1], v[2], v[3]))
-    }
-
-    ///
-    /// `from_array` 数组[west,south,east,north]直接生成LngLatBbox
-    ///
-    pub fn from_array(a: [f64; 4]) -> LngLatBbox {
-        LngLatBbox::new(a[0], a[1], a[2], a[3])
+impl From<Vec<f64>> for LngLatBbox{
+    fn from(value: Vec<f64>) -> Self {
+        assert_eq!(value.len(), 4, "The vector's length must be 4, but it is {}.",value.len());
+        Self::new(value[0],value[1],value[2],value[3])
     }
 }
+
+impl From<[f64;4]> for LngLatBbox {
+    fn from(value: [f64; 4]) -> Self {
+        Self::new(value[0],value[1],value[2],value[3])
+    }
+}
+
+impl Into<Vec<f64>> for LngLatBbox {
+    fn into(self) -> Vec<f64> {
+        vec![self.west, self.south, self.east, self.north]
+    }
+}
+   
 
 ///
 /// 判断两个LngLatBbox是否相等
@@ -692,24 +586,10 @@ impl Bbox {
             top,
         }
     }
-
-    pub fn from_vec(v: &Vec<f64>) -> Result<Bbox, MercantileError> {
-        let len = v.len() as u32;
-        if len != 4 {
-            return Err(MercantileError::InvalidVecLengthError {
-                valid_length: 4,
-                real_length: len,
-            });
-        }
-        Ok(Bbox::new(v[0], v[1], v[2], v[3]))
-    }
-    pub fn from_array(a: [f64; 4]) -> Bbox {
-        Bbox::new(a[0], a[1], a[2], a[3])
-    }
     ///
     /// `get_bbox_zoom` 按照bbox范围获取最小层级
     ///
-    pub fn get_bbox_zoom(&self) -> Zoom {
+    fn get_bbox_zoom(&self) -> Zoom {
         let max_zoom = 28;
         for z in 0..max_zoom {
             let mask = 1 << (32 - (z + 1)); // 2^a
@@ -720,6 +600,19 @@ impl Bbox {
             }
         }
         max_zoom
+    }
+}
+
+impl From<&Vec<f64>> for Bbox{
+    fn from(value: &Vec<f64>) -> Self {
+        assert_eq!(value.len(), 4, "The vector's length must be 4, but it is {}.",value.len());
+        Self::new(value[0],value[1],value[2],value[3])
+    }
+}
+
+impl From<&[f64;4]> for Bbox {
+    fn from(value: &[f64; 4]) -> Self {
+        Self::new(value[0],value[1],value[2],value[3])
     }
 }
 

@@ -14,7 +14,7 @@ mod tests {
     }
     #[test]
     fn test_bounds() {
-        let expected = mercantile::LngLatBbox::from_vec(&vec![-9.140625, 53.120405283106564, -8.7890625, 53.33087298301705]).unwrap();
+        let expected = mercantile::LngLatBbox::from(vec![-9.140625, 53.120405283106564, -8.7890625, 53.33087298301705]);
         let tile = mercantile::Tile::new(486,332,10);
         let lnglat = tile.bounds();
         assert_eq!(lnglat,expected);
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn test_lnglatbbox_from_vec(){
         let expected = mercantile::LngLatBbox::new(-9.140625, 53.120405283106564, -8.7890625, 53.33087298301705);
-        let b = mercantile::LngLatBbox::from_vec(&vec![-9.140625, 53.120405283106564, -8.7890625, 53.33087298301705]).unwrap();
+        let b = mercantile::LngLatBbox::from(vec![-9.140625, 53.120405283106564, -8.7890625, 53.33087298301705]);
         assert_eq!(b,expected);
     }
 
@@ -41,9 +41,9 @@ mod tests {
         let collection = vec![-1,0,1];
         assert_eq!(tiles.len(),8);
         for t in tiles{
-            assert_eq!(t.z(),tile.z());
-            assert_eq!(collection.contains(&(t.x() as i32 -tile.x() as i32)),true);
-            assert_eq!(collection.contains(&(t.y() as i32 -tile.y() as i32)),true);
+            assert_eq!(t.z,tile.z);
+            assert_eq!(collection.contains(&(t.x as i32 -tile.x as i32)),true);
+            assert_eq!(collection.contains(&(t.y as i32 -tile.y as i32)),true);
         }
     }
 
@@ -158,85 +158,48 @@ mod tests {
     fn test_bounding_tile(){
         let bbox = mercantile::LngLatBbox::new(-84.72656249999999, 11.178401873711785, -5.625, 61.60639637138628);
         let tile = mercantile::Tile::bounding_tile(bbox);
-        assert_eq!(tile.x(),1);
-        assert_eq!(tile.y(),1);
-        assert_eq!(tile.z(),2);
+        assert_eq!(tile.x,1);
+        assert_eq!(tile.y,1);
+        assert_eq!(tile.z,2);
     }
 
+    // 'Verify that tiles are being removed by simplify()
     #[test]
-    fn test_get_bbox_zoom(){
-        let b = mercantile::Bbox::new(170.0,30.0,180.0,45.0);
-        let r = b.get_bbox_zoom();
-        println!("{}",r);
+    fn test_simplify_removal(){
+        let mut tiles = vec![
+            mercantile::Tile::from([1298, 3129, 13]),
+            mercantile::Tile::from([649, 1564, 12]),
+            mercantile::Tile::from([650, 1564, 12])
+        ];
+        let simplified = mercantile::Tile::simplify(&mut tiles).unwrap();
+        assert_eq!(simplified.contains(&mercantile::Tile::from([1298, 3129, 13])),false);
+        assert_eq!(simplified.contains(&mercantile::Tile::from([649, 1564, 12])),true);
+        assert_eq!(simplified.contains(&mercantile::Tile::from([650, 1564, 12])),true);
     }
-
     #[test]
-    fn tile2lon(){
-        let r = mercantile::Tile::tile2lon(3,4);
-        println!("{}",r);
+    fn test_simplify() {
+        let tile = mercantile::Tile::new(243, 166, 9);
+        let mut children = tile.children_by_zoom(12).unwrap();
+        let len = children.len();
+        assert_eq!(len,64);
+        children.remove(len-1);
+        children.remove(len-2);
+        children.remove(len-3);
+        children.push(children[0]);
+    
+        let targets = vec![
+            mercantile::Tile::from([487, 332, 10]),
+            mercantile::Tile::from([486, 332, 10]),
+            mercantile::Tile::from([487, 333, 10]),
+            mercantile::Tile::from([973, 667, 11]),
+            mercantile::Tile::from([973, 666, 11]),
+            mercantile::Tile::from([972, 666, 11]),
+            mercantile::Tile::from([1944, 1334, 12]),
+        ];
+        let tiles = mercantile::Tile::simplify(&mut children).unwrap();
+    
+        for t in targets {
+            assert_eq!(tiles.contains(&t), true);
+        }
     }
-
-    #[test]
-    fn tile2geojson(){
-        let t = mercantile::Tile::new(0,0,1);
-        let s = t.tile2geojson();
-        // println!("{}",s)
-
-    }
-
-    #[test]
-    fn point2tile(){
-        let t = mercantile::Tile::point2tile(30.5,50.5,15);
-        // println!("{:#?}",t);
-
-    }
-
-    #[test]
-    fn test_from(){
-        let t = mercantile::Tile::from(&vec![1,3,5]);
-        // let t = mercantile::Tile::from([1,3,5]);
-        println!("{:#?}",t);
-
-    }
-
-    //'Verify that tiles are being removed by simplify()
-    // #[test]
-    // fn test_simplify_removal(){
-    //     let tiles = vec![
-    //         mercantile::Tile::from_array([1298, 3129, 13]),
-    //         mercantile::Tile::from_array([649, 1564, 12]),
-    //         mercantile::Tile::from_array([650, 1564, 12])
-    //     ];
-    //     let simplified = mercantile::Tile::simplify(&tiles).unwrap();
-    //     assert_eq!(simplified.contains(&mercantile::Tile::from_array([1298, 3129, 13])),false);
-    //     assert_eq!(simplified.contains(&mercantile::Tile::from_array([649, 1564, 12])),true);
-    //     assert_eq!(simplified.contains(&mercantile::Tile::from_array([650, 1564, 12])),true);
-    // }
-    // #[test]
-    // fn test_simplify() {
-    //     let tile = mercantile::Tile::new(243, 166, 9);
-    //     let mut children = tile.children_by_zoom(12).unwrap();
-    //     let len = children.len();
-    //     assert_eq!(len,64);
-    //     children.remove(len-1);
-    //     children.remove(len-2);
-    //     children.remove(len-3);
-    //     children.push(children[0]);
-    //
-    //     let targets = vec![
-    //         mercantile::Tile::from_array([487, 332, 10]),
-    //         mercantile::Tile::from_array([486, 332, 10]),
-    //         mercantile::Tile::from_array([487, 333, 10]),
-    //         mercantile::Tile::from_array([973, 667, 11]),
-    //         mercantile::Tile::from_array([973, 666, 11]),
-    //         mercantile::Tile::from_array([972, 666, 11]),
-    //         mercantile::Tile::from_array([1944, 1334, 12]),
-    //     ];
-    //     let tiles = mercantile::Tile::simplify(&children).unwrap();
-    //
-    //     for t in targets {
-    //         assert_eq!(tiles.contains(&t), true);
-    //     }
-    //
-    // }
 }
