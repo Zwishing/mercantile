@@ -16,17 +16,32 @@ const NEG_INFINITY: f64 = f64::NEG_INFINITY;
 
 const INFINITY: f64 = f64::INFINITY;
 
+pub enum TileMatrixSets {
+    WebMercatorQuad,
+    WGS1984Quad,
+}
+
+impl TileMatrixSets{
+    fn from_epsg(code:u32)->Self{
+        match code {
+            3857=>TileMatrixSets::WebMercatorQuad,
+            4326=>TileMatrixSets::WGS1984Quad,
+            _=>TileMatrixSets::WebMercatorQuad
+        }
+    }
+}
+
 ///
 /// tile x y z
 ///
-#[derive(Debug, Default, PartialEq, Eq, Hash, Copy)]
+#[derive(Debug, Default, Eq,Hash, Copy)]
 pub struct Tile {
     pub x: u32,
     pub y: u32,
     pub z: Zoom,
 }
 
-type Zoom = u8;
+pub type Zoom = u8;
 
 impl Tile {
     ///
@@ -96,9 +111,9 @@ impl Tile {
     }
 
     ///
-    /// `tile` 按照经纬度和zoom构建瓦片
+    /// `from_lnglat` 按照经纬度和zoom构建瓦片
     ///
-    pub fn tile(lng: f64, lat: f64, zoom: Zoom, truncate: bool) -> Self {
+    pub fn from_lnglat(lng: f64, lat: f64, zoom: Zoom, truncate: bool) -> Self {
         let (x, y) = _xy(lng, lat, truncate);
         let z2 = 1 << zoom;
 
@@ -118,9 +133,9 @@ impl Tile {
     }
 
     ///
-    /// `quadkey`
+    /// `into_quadkey`
     ///
-    pub fn quadkey(&self) -> String {
+    pub fn into_quadkey(&self) -> String {
         let mut qk = String::with_capacity(self.z as usize);
         (1..=self.z).rev().for_each(|z| {
             let mask = 1 << (z - 1);
@@ -135,7 +150,7 @@ impl Tile {
         qk
     }
 
-    pub fn quadkey_to_tile(qk: &str) -> Result<Self, MercantileError> {
+    pub fn from_quadkey(qk: &str) -> Result<Self, MercantileError> {
         if qk.is_empty() {
             return Ok(Self::new(0, 0, 0));
         }
@@ -164,7 +179,7 @@ impl Tile {
     ///
     /// `tiles` 按照四至及层级生成Tile
     ///
-    pub fn tiles<'a>(
+    pub fn from_bounds<'a>(
         mut west: f64,
         mut south: f64,
         mut east: f64,
@@ -194,8 +209,8 @@ impl Tile {
                 n = n.min(85.051129);
 
                 zooms.iter().flat_map(move |&z| {
-                    let ul_tile = Self::tile(w, n, z, false);
-                    let lr_tile = Self::tile(e - LL_EPSILON, s + LL_EPSILON, z, false);
+                    let ul_tile = Self::from_lnglat(w, n, z, false);
+                    let lr_tile = Self::from_lnglat(e - LL_EPSILON, s + LL_EPSILON, z, false);
 
                     (ul_tile.x..=lr_tile.x).flat_map(move |i| {
                         (ul_tile.y..=lr_tile.y).map(move |j| Self::new(i, j, z))
@@ -283,7 +298,7 @@ impl Tile {
         let mut root_set = HashSet::new();
 
         // 获取排序后的瓦片
-        let sorted_tiles = Self::sorted_tiles(tiles);
+        let sorted_tiles = Self::sort_tiles(tiles);
 
         // 处理每个瓦片，决定是否加入到 root_set 中
         for t in sorted_tiles {
@@ -338,8 +353,8 @@ impl Tile {
     /// `bounding_tile` Get the smallest tile to cover a LngLatBbox 经纬度范围
     ///
     pub fn bounding_tile(bbox: LngLatBbox) -> Self {
-        let min = Tile::point2tile(bbox.west, bbox.south, 32);
-        let max = Tile::point2tile(bbox.east, bbox.north, 32);
+        let min = Tile::from_point(bbox.west, bbox.south, 32);
+        let max = Tile::from_point(bbox.east, bbox.north, 32);
         let bbox = Bbox::new(min.x as f64, min.y as f64, max.x as f64, max.y as f64);
         let z = bbox.get_bbox_zoom();
         if z == 0 {
@@ -353,21 +368,22 @@ impl Tile {
     }
 
     ///
-    /// `tile2lnglatbbox` tile转为lnglatbbox 经纬度范围
+    /// `into_lnglatbbox` tile转为lnglatbbox 经纬度范围
     ///
-    pub fn tile2lnglatbbox(&self) -> LngLatBbox {
-        let e = Self::tile2lon(self.x + 1, self.z);
-        let w = Self::tile2lon(self.x, self.z);
-        let s = Self::tile2lat(self.y + 1, self.z);
-        let n = Self::tile2lat(self.y, self.z);
+    pub fn into_lnglatbbox(&self) -> LngLatBbox {
+        let e = Self::into_lon(self.x + 1, self.z);
+        let w = Self::into_lon(self.x, self.z);
+        let s = Self::into_lat(self.y + 1, self.z);
+        let n = Self::into_lat(self.y, self.z);
         LngLatBbox::new(e, w, s, n)
     }
+    
 
     ///
-    ///  `tile2geojson` tile转geojson
+    ///  `into_geojson` tile转geojson
     ///
-    pub fn tile2geojson(&self) -> String {
-        let bbox = Self::tile2lnglatbbox(&self);
+    pub fn into_geojson(&self) -> String {
+        let bbox = Self::into_lnglatbbox(&self);
         let geometry = Geometry::new(Value::Polygon(vec![
             vec![vec![bbox.west, bbox.north]],
             vec![vec![bbox.west, bbox.south]],
@@ -375,7 +391,7 @@ impl Tile {
             vec![vec![bbox.east, bbox.north]],
             vec![vec![bbox.west, bbox.north]],
         ]));
-        let bbox = self.tile2lnglatbbox().into();
+        let bbox = self.into_lnglatbbox().into();
         let poly = GeoJson::Feature(Feature {
             bbox: Some(bbox),
             geometry: Some(geometry),
@@ -388,31 +404,24 @@ impl Tile {
     }
 
     ///
-    /// `tiles_equal` 判断两个tile是否相等
+    /// `into_lon` 按照tile的x和z转为经度
     ///
-    pub fn tiles_equal(&self, tile: &Tile) -> bool {
-        self.x == tile.x && self.y == tile.y && self.z == tile.z
-    }
-
-    ///
-    /// `tile2lon` 按照tile的x和z转为经度
-    ///
-    pub fn tile2lon(x: u32, z: Zoom) -> f64 {
+    pub fn into_lon(x: u32, z: Zoom) -> f64 {
         x as f64 / 2_i32.pow(z as u32) as f64 * 360.0 - 180.0
     }
 
     ///
-    /// `tile2lat` 按照tile的y和z转为纬度
+    /// `into_lat` 按照tile的y和z转为纬度
     ///
-    pub fn tile2lat(y: u32, z: Zoom) -> f64 {
+    pub fn into_lat(y: u32, z: Zoom) -> f64 {
         let n = PI - (2.0 * PI * (y as f64)) / (2_i32.pow(z as u32) as f64);
         180.0 / PI * (0.5 * (n.exp() - (-n).exp())).atan()
     }
 
     ///
-    /// `point2tile` Get the tile location for a point at a zoom level
+    /// `from_point` Get the tile location for a point at a zoom level
     ///
-    pub fn point2tile(lon: f64, lat: f64, z: Zoom) -> Tile {
+    pub fn from_point(lon: f64, lat: f64, z: Zoom) -> Tile {
         let sin = (lat * PI / 180.0).sin();
         let z2 = 2_i64.pow(z as u32) as f64;
         let mut x = z2 * (lon / 360.0 + 0.5);
@@ -437,9 +446,9 @@ impl Tile {
     }
 
     ///
-    /// `sorted_tiles` 对tiles进行排序,返回一个新的结果
+    /// `sort_tiles` 对tiles进行排序,返回一个新的结果
     ///
-    pub fn sorted_tiles(tiles: &mut Vec<Self>) -> &Vec<Self> {
+    pub fn sort_tiles(tiles: &mut Vec<Self>) -> &Vec<Self> {
         // let mut tiles = tiles.clone();
         tiles.sort_by(|a, b| a.z.cmp(&b.z));
         tiles
@@ -463,6 +472,12 @@ impl From<[u32;3]> for Tile {
 impl Clone for Tile {
     fn clone(&self) -> Self {
         Tile::new(self.x, self.y, self.z)
+    }
+}
+
+impl PartialEq for Tile {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x && self.y == other.y && self.z == other.z
     }
 }
 
@@ -616,9 +631,6 @@ impl From<&[f64;4]> for Bbox {
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////
-/// impl
-///////////////////////////////////////////////////////////////////////////////////////////
 
 ///
 /// `rad2deg`弧度转度

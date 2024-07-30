@@ -58,14 +58,14 @@ mod tests {
     fn test_quadkey() {
         let tile = mercantile::Tile::new(486,332,10);
         let expected = String::from("0313102310");
-        let s = tile.quadkey();
+        let s = tile.into_quadkey();
         assert_eq!(s,expected);
     }
 
     #[test]
     fn test_quadkey_to_tile(){
         let s = "0313102310";
-        let tile = mercantile::Tile::quadkey_to_tile(s).unwrap();
+        let tile = mercantile::Tile::from_quadkey(s).unwrap();
         let expected = mercantile::Tile::new(486,332,10);
         assert_eq!(tile,expected);
     }
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn test_tiles(){
         let zoom = vec![14];
-        let tiles = mercantile::Tile::tiles(-105.0,39.99,-104.99,40.0,&zoom,false);
+        let tiles = mercantile::Tile::from_bounds(-105.0, 39.99, -104.99, 40.0, &zoom, false);
         let expected = vec![
             mercantile::Tile::new(3413,6202,14),
             mercantile::Tile::new(3413,6203,14),
@@ -147,7 +147,7 @@ mod tests {
             mercantile::Tile::new(0,1,1),
             mercantile::Tile::new(0,2,5),
             mercantile::Tile::new(1,1,1)];
-        let t = mercantile::Tile::sorted_tiles(&mut tiles);
+        let t = mercantile::Tile::sort_tiles(&mut tiles);
         let expected = vec![
             mercantile::Tile::new(0,1,1),
             mercantile::Tile::new(1,1,1),
